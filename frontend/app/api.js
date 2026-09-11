@@ -1,4 +1,4 @@
-const API_BASE_URL = "http://127.0.0.1:8000";
+const API_BASE_URL = "https://enterprise-knowledge-copilot-la27.onrender.com";
 
 // 1. Login Function (टोकन सेव करने के लिए)
 export async function loginUser(username, password) {
