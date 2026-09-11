@@ -10,3 +10,16 @@ PyJWT>=2.8.0
 bcrypt>=4.0.0
 langchain-community>=0.0.10
 pypdf>=4.0.0
+fastapi
+uvicorn
+pydantic
+python-dotenv
+google-generativeai
+langchain
+langchain-google-genai
+langchain-community
+langchain-text-splitters
+chromadb
+pypdf
+bcrypt
+PyJWT
