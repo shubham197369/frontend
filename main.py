@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 import os
 import shutil
 import sqlite3
+import traceback
 from typing import Optional
 import bcrypt
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile, status
@@ -35,10 +36,11 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/login")
 PERSIST_DIRECTORY = "./chroma_db"
 vector_store = None
 
-# Configure Google Gemini API
+# Configure Google Gemini API & Sync for LangChain Embeddings
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
+    os.environ["GOOGLE_API_KEY"] = GEMINI_API_KEY
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -318,6 +320,7 @@ async def upload_pdf(
             "status": "Indexed and Saved into Vector DB successfully using Gemini API!",
         }
     except Exception as e:
+        traceback.print_exc()
         raise HTTPException(
             status_code=500, detail=f"Failed to process PDF: {str(e)}"
         )
@@ -362,6 +365,7 @@ Answer:"""
         ai_answer = response.text
 
     except Exception as e:
+        traceback.print_exc()
         ai_answer = (
             f"**[Error Details]**: {str(e)}\n\n**[Fallback Chunks]**:\n"
             + "\n".join([f"• {d.page_content}" for d in docs])
