@@ -21,7 +21,7 @@ export default function RegisterForm({ onRegisterSuccess, onSwitchToLogin }: Reg
     setSuccess("");
 
     try {
-      const response = await fetch("http://localhost:8000/register", {
+     const response = await fetch("https://enterprise-knowledge-copilot-la27.onrender.com/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, password }),
