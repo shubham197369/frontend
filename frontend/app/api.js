@@ -1,7 +1,7 @@
 const API_BASE_URL = "https://enterprise-knowledge-copilot-la27.onrender.com";
 
 // 1. Login Function (टोकन सेव करने के लिए)
-export async function loginUser(username, password) {
+export async function loginUser(username: string, password: string) {
   const formData = new URLSearchParams();
   formData.append("username", username);
   formData.append("password", password);
@@ -24,7 +24,7 @@ export async function loginUser(username, password) {
 }
 
 // 2. Query/Chat Function (टोकन हेडर के साथ भेजेगा)
-export async function sendQuery(question) {
+export async function sendQuery(question: string) {
   const token = localStorage.getItem("access_token");
 
   const response = await fetch(`${API_BASE_URL}/api/query`, {
@@ -44,7 +44,7 @@ export async function sendQuery(question) {
 }
 
 // 3. PDF Upload Function (सिर्फ Admin के लिए)
-export async function uploadPdf(fileObject) {
+export async function uploadPdf(fileObject: File) {
   const token = localStorage.getItem("access_token");
   const formData = new FormData();
   formData.append("file", fileObject);
@@ -58,14 +58,15 @@ export async function uploadPdf(fileObject) {
   });
 
   if (!response.ok) {
-    throw new Error("Upload failed. Make sure you are logged in as admin.");
+    const errData = await response.json().catch(() => ({}));
+    throw new Error(errData.detail || "Upload failed. Make sure you are logged in as admin.");
   }
 
   return await response.json();
 }
 
 // 4. Change Password Function (नया पासवर्ड अपडेट करने के लिए)
-export async function changePassword(oldPassword, newPassword) {
+export async function changePassword(oldPassword: string, newPassword: string) {
   const token = localStorage.getItem("access_token");
 
   const response = await fetch(`${API_BASE_URL}/api/change-password`, {
