@@ -300,7 +300,8 @@ async def upload_pdf(
         )
         chunks = text_splitter.split_text(extracted_text)
 
-        embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+        # FIXED: Updated embedding model name
+        embeddings = GoogleGenerativeAIEmbeddings(model="text-embedding-004")
 
         vector_store = None
         if os.path.exists(PERSIST_DIRECTORY):
@@ -335,7 +336,8 @@ async def query_doc(
     if not vector_store:
         try:
             if os.path.exists(PERSIST_DIRECTORY):
-                embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+                # FIXED: Updated embedding model name
+                embeddings = GoogleGenerativeAIEmbeddings(model="text-embedding-004")
                 vector_store = Chroma(
                     persist_directory=PERSIST_DIRECTORY, embedding_function=embeddings
                 )
