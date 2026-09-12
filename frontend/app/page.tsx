@@ -199,7 +199,7 @@ export default function Home() {
     }));
   };
 
-  // PDF Upload Handler (Admin Only)
+  // PDF Upload Handler (Admin Only) - Updated with strict token checking
   const handleUpload = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!file) return;
@@ -208,6 +208,11 @@ export default function Home() {
     setUploadStatus("");
 
     try {
+      const currentToken = localStorage.getItem("access_token");
+      if (!currentToken) {
+        throw new Error("No access token found. Please login again.");
+      }
+
       const data = await uploadPdf(file);
       setUploadStatus(`Success: ${data.filename} indexed (${data.total_chunks} chunks).`);
       setSessions(prev => prev.map(s => s.id === activeSessionId ? { ...s, title: data.filename } : s));
