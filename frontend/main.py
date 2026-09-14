@@ -8,12 +8,12 @@ from fastapi import Depends, FastAPI, File, HTTPException, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 import jwt
+import google.generativeai as genai
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from pydantic import BaseModel
 from pypdf import PdfReader
-from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 
 app = FastAPI()
 
@@ -32,16 +32,20 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 1 day
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/login")
 
-# फिक्स डायरेक्टरी
 PERSIST_DIRECTORY = "./chroma_db"
 vector_store = None
 
-print("Loading local model and tokenizer (flan-t5-base)...")
-tokenizer = AutoTokenizer.from_pretrained("google/flan-t5-base")
-model = AutoModelForSeq2SeqLM.from_pretrained("google/flan-t5-base")
+# Configure Google Gemini API for Generation
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
+    os.environ["GOOGLE_API_KEY"] = GEMINI_API_KEY
+
+print("Initializing HuggingFace Embeddings model...")
+embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
 
 
-# --- Direct Bcrypt Helper Functions (Fixes 72-byte & Passlib error) ---
+# --- Direct Bcrypt Helper Functions ---
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     password_bytes = plain_password.encode("utf-8")[:72]
     return bcrypt.checkpw(password_bytes, hashed_password.encode("utf-8"))
@@ -67,7 +71,6 @@ def init_db():
     """)
     conn.commit()
 
-    # Default Admin Create करें
     cursor.execute("SELECT * FROM users WHERE username = 'admin'")
     if not cursor.fetchone():
         hashed_pwd = get_password_hash("admin123")
@@ -141,16 +144,13 @@ def get_current_user(token: str = Depends(oauth2_scheme)):
 # --- API Endpoints ---
 @app.get("/")
 def read_root():
-    return {"message": "Local Enterprise Knowledge Copilot API with Auth is running!"}
+    return {"message": "Enterprise Knowledge Copilot API with Auth is running!"}
 
 
-# --- Register Endpoint (Connected to Database & Frontend) ---
 @app.post("/register")
 def register_user(user: UserRegisterSchema):
     conn = sqlite3.connect("enterprise_auth.db")
     cursor = conn.cursor()
-    
-    # Check if username already exists
     cursor.execute("SELECT id FROM users WHERE username = ?", (user.username,))
     if cursor.fetchone():
         conn.close()
@@ -159,7 +159,6 @@ def register_user(user: UserRegisterSchema):
     try:
         hashed_pwd = get_password_hash(user.password)
         now = datetime.now().isoformat()
-        # Self-registered users get default 'viewer' role
         cursor.execute(
             "INSERT INTO users (username, password_hash, role, password_changed_at) VALUES (?, ?, ?, ?)",
             (user.username, hashed_pwd, "viewer", now),
@@ -198,7 +197,6 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
     return {"access_token": access_token, "token_type": "bearer", "role": user[2]}
 
 
-# --- New API: Get Registered Users (Admin Only) ---
 @app.get("/api/users")
 async def get_users(current_user: dict = Depends(get_current_user)):
     if current_user["role"] != "admin":
@@ -212,17 +210,14 @@ async def get_users(current_user: dict = Depends(get_current_user)):
     rows = cursor.fetchall()
     conn.close()
 
-    users_list = [{"username": row[0], "role": row[1]} for row in rows]
-    return users_list
+    return [{"username": row[0], "role": row[1]} for row in rows]
 
 
-# --- New API: Change Password ---
 @app.post("/api/change-password")
 async def change_password(
     req: ChangePasswordRequest, current_user: dict = Depends(get_current_user)
 ):
     username = current_user["username"]
-
     conn = sqlite3.connect("enterprise_auth.db")
     cursor = conn.cursor()
     cursor.execute(
@@ -236,14 +231,12 @@ async def change_password(
 
     new_hashed_pwd = get_password_hash(req.new_password)
     now = datetime.now().isoformat()
-
     cursor.execute(
         "UPDATE users SET password_hash = ?, password_changed_at = ? WHERE username = ?",
         (new_hashed_pwd, now, username),
     )
     conn.commit()
     conn.close()
-
     return {"message": "Password updated successfully!"}
 
 
@@ -313,8 +306,6 @@ async def upload_pdf(
         )
         chunks = text_splitter.split_text(extracted_text)
 
-        embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-
         vector_store = None
         if os.path.exists(PERSIST_DIRECTORY):
             try:
@@ -347,7 +338,6 @@ async def query_doc(
     if not vector_store:
         try:
             if os.path.exists(PERSIST_DIRECTORY):
-                embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
                 vector_store = Chroma(
                     persist_directory=PERSIST_DIRECTORY, embedding_function=embeddings
                 )
@@ -372,15 +362,9 @@ Context:
 Question: {request.question}
 Answer:"""
 
-        inputs = tokenizer(prompt, return_tensors="pt", max_length=512, truncation=True)
-        outputs = model.generate(
-            **inputs,
-            max_new_tokens=250,
-            do_sample=False,
-            num_beams=4,
-            no_repeat_ngram_size=3,
-        )
-        ai_answer = tokenizer.decode(outputs[0], skip_special_tokens=True)
+        model_client = genai.GenerativeModel('gemini-3.6-flash')
+        response = model_client.generate_content(prompt)
+        ai_answer = response.text
 
     except Exception as e:
         ai_answer = (
@@ -395,3 +379,9 @@ Answer:"""
         "ai_answer": ai_answer,
         "relevant_chunks": [doc.page_content for doc in docs],
     }
+
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 10000))
+    uvicorn.run("main:app", host="0.0.0.0", port=port)
