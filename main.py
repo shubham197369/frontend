@@ -33,7 +33,9 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 1 day
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/login")
 
-PERSIST_DIRECTORY = "./chroma_db"
+# Use /tmp for Render cloud read-write compatibility
+PERSIST_DIRECTORY = "/tmp/chroma_db"
+DB_PATH = "/tmp/enterprise_auth.db"
 vector_store = None
 
 # Configure Google Gemini API & Sync for LangChain Embeddings
@@ -54,7 +56,7 @@ def get_password_hash(password: str) -> str:
 
 
 def init_db():
-    conn = sqlite3.connect("enterprise_auth.db")
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
@@ -144,7 +146,7 @@ def read_root():
 
 @app.post("/register")
 def register_user(user: UserRegisterSchema):
-    conn = sqlite3.connect("enterprise_auth.db")
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("SELECT id FROM users WHERE username = ?", (user.username,))
     if cursor.fetchone():
@@ -169,7 +171,7 @@ def register_user(user: UserRegisterSchema):
 
 @app.post("/api/login", response_model=Token)
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
-    conn = sqlite3.connect("enterprise_auth.db")
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute(
         "SELECT username, password_hash, role FROM users WHERE username = ?",
@@ -199,7 +201,7 @@ async def get_users(current_user: dict = Depends(get_current_user)):
             status_code=403, detail="Access Denied: Only Admin can view users list."
         )
 
-    conn = sqlite3.connect("enterprise_auth.db")
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("SELECT username, role FROM users")
     rows = cursor.fetchall()
@@ -213,7 +215,7 @@ async def change_password(
     req: ChangePasswordRequest, current_user: dict = Depends(get_current_user)
 ):
     username = current_user["username"]
-    conn = sqlite3.connect("enterprise_auth.db")
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute(
         "SELECT password_hash FROM users WHERE username = ?", (username,)
@@ -249,7 +251,7 @@ async def create_user(
             status_code=400, detail="Invalid role. Use 'admin' or 'viewer'."
         )
 
-    conn = sqlite3.connect("enterprise_auth.db")
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     try:
         hashed_pwd = get_password_hash(user_data.password)
