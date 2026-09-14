@@ -300,7 +300,7 @@ async def upload_pdf(
         )
         chunks = text_splitter.split_text(extracted_text)
 
-        embeddings = GoogleGenerativeAIEmbeddings(model="embedding-004")
+        embeddings = GoogleGenerativeAIEmbeddings(model="embedding-001")
 
         vector_store = None
         if os.path.exists(PERSIST_DIRECTORY):
