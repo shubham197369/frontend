@@ -137,6 +137,7 @@ def get_current_user(token: str = Depends(oauth2_scheme)):
 
 
 @app.get("/")
+@app.head("/")
 def read_root():
     return {"message": "Cloud-Powered Enterprise Knowledge Copilot API is running!"}
 
