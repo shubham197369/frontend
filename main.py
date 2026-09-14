@@ -1,6 +1,5 @@
 from datetime import datetime, timedelta
 import os
-import shutil
 import sqlite3
 import traceback
 from typing import Optional
@@ -15,6 +14,7 @@ from langchain_community.vectorstores import Chroma
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from pydantic import BaseModel
 from pypdf import PdfReader
+import chromadb
 
 app = FastAPI()
 
@@ -33,10 +33,12 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 1 day
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/login")
 
-# Use /tmp for Render cloud read-write compatibility
-PERSIST_DIRECTORY = "/tmp/chroma_db"
+# Auth DB path in /tmp for Render cloud read-write compatibility
 DB_PATH = "/tmp/enterprise_auth.db"
+
+# Global vector store and in-memory Chroma client
 vector_store = None
+chroma_client = chromadb.EphemeralClient()
 
 # Configure Google Gemini API & Sync for LangChain Embeddings
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
@@ -282,7 +284,7 @@ async def upload_pdf(
             detail="Access Denied: Only Admin can upload/index documents.",
         )
 
-    global vector_store
+    global vector_store, chroma_client
     if not file.filename.endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are allowed.")
 
@@ -305,22 +307,19 @@ async def upload_pdf(
 
         embeddings = GoogleGenerativeAIEmbeddings(model="gemini-embedding-001")
 
-        vector_store = None
-        if os.path.exists(PERSIST_DIRECTORY):
-            try:
-                shutil.rmtree(PERSIST_DIRECTORY)
-            except Exception:
-                pass
-
+        # Using in-memory client to avoid any file-system write lock errors on cloud platforms
         vector_store = Chroma.from_texts(
-            texts=chunks, embedding=embeddings, persist_directory=PERSIST_DIRECTORY
+            texts=chunks, 
+            embedding=embeddings, 
+            client=chroma_client,
+            collection_name="enterprise_docs"
         )
 
         return {
             "filename": file.filename,
             "total_pages": len(pdf_reader.pages),
             "total_chunks": len(chunks),
-            "status": "Indexed and Saved into Vector DB successfully using Gemini API!",
+            "status": "Indexed and Saved into In-Memory Vector DB successfully using Gemini API!",
         }
     except Exception as e:
         traceback.print_exc()
@@ -334,16 +333,6 @@ async def query_doc(
     request: QueryRequest, current_user: dict = Depends(get_current_user)
 ):
     global vector_store
-
-    if not vector_store:
-        try:
-            if os.path.exists(PERSIST_DIRECTORY):
-                embeddings = GoogleGenerativeAIEmbeddings(model="gemini-embedding-001")
-                vector_store = Chroma(
-                    persist_directory=PERSIST_DIRECTORY, embedding_function=embeddings
-                )
-        except Exception:
-            pass
 
     if not vector_store:
         raise HTTPException(
