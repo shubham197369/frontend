@@ -34,6 +34,7 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 1 day
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/login")
 
 PERSIST_DIRECTORY = "./chroma_db"
+DOCS_DIRECTORY = "./docs"
 vector_store = None
 
 # Configure Google Gemini API & Sync for LangChain Embeddings
@@ -80,6 +81,56 @@ def init_db():
 
 
 init_db()
+
+
+# --- Automatic Startup Document Ingestion ---
+@app.on_event("startup")
+async def startup_event():
+    global vector_store
+    embeddings = GoogleGenerativeAIEmbeddings(model="gemini-embedding-001")
+    
+    # Check if vector DB already exists on disk
+    if os.path.exists(PERSIST_DIRECTORY) and os.listdir(PERSIST_DIRECTORY):
+        try:
+            vector_store = Chroma(
+                persist_directory=PERSIST_DIRECTORY, embedding_function=embeddings
+            )
+            print(" Loaded existing Vector DB from disk successfully.")
+            return
+        except Exception as e:
+            print(f"Error loading existing vector store: {e}")
+
+    # If DB doesn't exist, check docs folder and auto-index any PDF found
+    if os.path.exists(DOCS_DIRECTORY):
+        pdf_files = [f for f in os.listdir(DOCS_DIRECTORY) if f.endswith(".pdf")]
+        if pdf_files:
+            print(f" Found default PDFs in docs/: {pdf_files}. Auto-indexing...")
+            extracted_text = ""
+            for pdf_file in pdf_files:
+                pdf_path = os.path.join(DOCS_DIRECTORY, pdf_file)
+                try:
+                    reader = PdfReader(pdf_path)
+                    for page in reader.pages:
+                        text = page.extract_text()
+                        if text:
+                            extracted_text += text + "\n"
+                except Exception as e:
+                    print(f"Failed to read {pdf_file}: {e}")
+
+            if extracted_text.strip():
+                text_splitter = RecursiveCharacterTextSplitter(
+                    chunk_size=1000, chunk_overlap=150
+                )
+                chunks = text_splitter.split_text(extracted_text)
+
+                vector_store = Chroma.from_texts(
+                    texts=chunks, embedding=embeddings, persist_directory=PERSIST_DIRECTORY
+                )
+                print(" Default documents auto-indexed and saved into ChromaDB successfully!")
+            else:
+                print("⚠️ No text extracted from default PDFs.")
+        else:
+            print("⚠️ No PDF files found in docs/ folder.")
 
 
 class QueryRequest(BaseModel):
